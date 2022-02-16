@@ -1,0 +1,507 @@
+---
+title: "Biostat 213 midterm"
+author: Zian ZHUANG
+output:
+  html_document:
+    highlight: pygments
+    toc: yes
+    toc_float: yes
+---
+
+<!-- Setup -->
+<style type="text/css">
+body{ /* Normal  */
+      font-size: 17px;
+      font-family: "Times New Roman";
+  }
+h1,h2,h3,h4,h5,h6{
+  font-family: "Times New Roman";
+}
+</style>
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE, cache.lazy = FALSE)
+library(tidyverse)
+library(kableExtra)
+library(reshape2)
+library(ggplot2)
+```
+<!-- Begin writing -->
+
+## Background
+
+Assume that your business opens at 8am and closes at 5pm. Customers arrive at a rate of 4/hr. Between the hours of noon and 1 that rate increases to 6/hr. You can choose the service time of your server.
+
+Suppose you have 2 tellers. There are, in general, 3 types of queuing systems 1) 1 line with parallel servers. 2) tandem service (In-N-out example) and 3) where each teller has their own line (grocery store). 
+
+What is the expected waiting time. And what is the time past closing the last customer arrives.. Simulate 1 week (do 7 times and take the average).
+
+**Define**: 
+
+1) waiting time: total time in the shop of a customer - service time of a customer
+
+2) past time: departure time of last customer - arrive time of last customer
+
+- Before starting to answer the question, we simulate the arrive time and service time for customers. In this way, we can compare results between different methods more clearly.
+
+### 1) simulate customer arrive time
+
+```{r, warning=FALSE}
+# simulate for a longer time
+sim_arrival <- function(seed){
+  t <- 0; j <- 1; i <- 0; x <- 0; s <- vector()
+  lambda <- c(4,6,4); t_point <- c(4,5,100)
+  set.seed(seed)
+  while(t+x<=24){
+    x <- -1/lambda[j]*log(runif(1))
+    while(t+x>t_point[j]){
+      x <- (x-t_point[j]+t)*lambda[j]/lambda[j+1]
+      t <- t_point[j]
+      j <- j+1
+    }
+    t <- t+x
+    i <- i+1
+    s[i] <- t
+  }
+  return(s[1:60])
+}
+s <- sapply(1:100,sim_arrival)
+df <- as.data.frame(melt(s))
+ggplot(df, aes(x=value))+
+  geom_histogram(aes(y=..density..), colour="black", fill="white")+
+  geom_density(alpha=.2, fill="#FF6666")+
+  scale_x_continuous(limits = c(0,10))+
+  xlab("time")+
+  theme_bw()
+```
+
+### 2) simulate standard service time
+
+```{r}
+set.seed(1996)
+lambda <- 4 # standard rate lambda
+service <- replicate(100,-1/lambda*log(runif(100)))
+```
+
+**Note**: here we set two tellers' rate as $\lambda/\alpha$ and $\lambda/\beta$, respectively. Here we take $\alpha=1, \beta=2$.
+
+```{r}
+alpha <- 1 ; beta <- 2
+```
+
+## Medium question
+
+Suppose you have 2 tellers each with their own rate. There are, in general, 3 types of queuing systems:
+
+1) 1 line with parallel servers. 
+
+2) tandem service (In-N-out example) and 
+
+3) where each teller has their own line (grocery store).
+
+**Assumptions**: 
+
+- In the 2 lines 2 servers system, customers are equally divided for $\alpha$ and $\beta$ teller in sequence.
+
+- For the tandem system, we test two situation: 1) first $\alpha$ teller and then $\beta$ teller. 2) first $\beta$ teller and then $\alpha$ teller.
+
+- In the tandem system, total work for one customer is equally divided for $\alpha$ and $\beta$ teller.
+
+### 1) 1 line with parallel servers
+
+```{r}
+sim_1l2s <- function(seed){
+  t <- 0   # time variable
+  n <- 0  # number of customers
+  i1 <- 0 # server 1 customers
+  i2 <- 0 # server 2 customers
+  na <- 0 # number of arrival at time t
+  c1 <- 0 # number of customers being served by server 1 by time t
+  c2 <- 0 # number of customers being served by server 2 by time t
+  an <- data.frame(id=NULL, t=NULL)  # arrival time of customer n
+  dn <- data.frame(id=NULL, t=NULL)  # departure time of customer n
+  ta <- 0 # time of next arrival
+  t1 <- Inf # service completion time by server 1
+  t2 <- Inf # service completion time by server 2
+  
+  # Initialize
+  set.seed(seed)
+  ta <- s[1, seed]
+  close_time <- 9
+  
+  while(ta <= close_time | i1 != 0 | i2 != 0){
+    if(ta==min(c(ta, t1, t2, close_time))){###### case 1: ta=min(ta, t1, t2)  
+      t <- ta
+      na <- na+1
+      ta <- s[(na+1), seed]
+      an <- rbind(an, data.frame(id=na, t=t))
+      if(n==0){
+        n <- 1; i1 <- na; i2 <- 0
+        service[i1, seed] <- service[i1, seed]*alpha
+        t1 <- t+service[i1, seed]
+      }else if(n==1 & i1>0){
+        n <- 2; i2 <- na
+        service[i2, seed] <- service[i2, seed]*beta
+        t2 <- t+service[i2, seed]
+      }else if(n==1 & i2>0){
+        n <- 2; i1 <- na
+        service[i1, seed] <- service[i1, seed]*alpha
+        t1 <- t+service[i1, seed]
+      }else if(n > 1){
+        n <- n + 1
+      }
+    }else if(t1==min(c(t1, t2))){#####case 2 t1 < ta, t1 <= t2
+      t <- t1
+      c1 <- c1+1
+      dn <- rbind(dn, data.frame(id=i1, t=t))
+      if(n==1){
+        n <- 0; i1 <- 0; i2 <- 0
+        t1 <- Inf
+      }else if(n==2){
+        n <- 1; i1 <- 0
+        t1 <- Inf
+      }else if(n>2){
+        m <- max(i1,i2)
+        n <- n - 1; i1 <- m + 1
+        service[i1, seed] <- service[i1, seed]*alpha
+        t1 <- t+service[i1, seed]
+      }
+    }else if(t2==min(c(t1, t2))){#####case 3 t2 < ta, t2 <= t1
+      t <- t2
+      c2 <- c2+1
+      dn <- rbind(dn, data.frame(id=i2, t=t))
+      if(n==1){
+        n <- 0; i1 <- 0; i2 <- 0
+        t2 <- Inf
+      }else if(n==2){
+        n <- 1; i2 <- 0
+        t2 <- Inf
+      }else if(n>2){
+        m <- max(i1,i2)
+        n <- n - 1; i2 <- m + 1
+        service[i2, seed] <- service[i2, seed]*beta
+        t2 <- t+service[i2, seed]
+      }
+    }
+  }
+  ave_time <- an %>% 
+    right_join(dn, by = "id") %>% 
+    mutate(wait_time=t.y-t.x) %>% 
+    summarise(ave_time=mean(wait_time))
+  ave_time <- ave_time - mean(service[1:dim(dn)[1], seed])
+  time_past <- dn$t[dim(dn)[1]] - an$t[dim(an)[1]]
+  return(data.frame(ave_time=ave_time, time_past=time_past))
+}
+results <- apply(matrix(1:7),1, sim_1l2s)
+results_1l2s <- colMeans(Reduce("rbind",results))
+```
+
+### 2) tandem service (In-N-out example)
+
+```{r}
+sim_tandem <- function(seed, alpha, beta){
+  t <- 0  # time variable
+  n1 <- 0 # server 1 customers
+  n2 <- 0 # server 2 customers
+  a1n <- data.frame(id=NULL, t=NULL)  # arrival time of customer n at S1
+  a2n <- data.frame(id=NULL, t=NULL)  # arrival time of customer n at S2
+  dn <- data.frame(id=NULL, t=NULL)  # departure time of customer n
+  ta <- 0 # time of next arrival
+  t1 <- Inf # service completion time by server 1
+  t2 <- Inf # service completion time by server 2
+  na <- 0 # number of arrival at time t
+  nd <- 0 # number of departure at time t
+  
+  set.seed(seed)
+  ta <- s[1, seed]
+  close_time <- 9
+  while(ta <= close_time | n1 != 0 | n2 != 0){
+    if(ta==min(c(ta, t1, t2, close_time))){###### case 1: ta=min(ta, t1, t2)  
+      t <- ta
+      na <- na+1
+      ta <- s[(na+1), seed]
+      n1 <- n1+1
+      if(n1==1){
+        t1 <- t+service[na, seed]*alpha/2
+      }
+      a1n <- rbind(a1n, data.frame(id=na, t=t))
+    }else if(t1<=t2){#####case 2 t1 < ta, t1 <= t2 
+      t <- t1
+      n1 <- n1-1
+      n2 <- n2+1
+      if(n1==0){
+        t1 <- Inf
+      }else{
+        t1 <- t+service[na-n1+1, seed]*alpha/2
+      }
+      if(n2==1){
+        t2 <- t+service[na-n1, seed]*beta/2
+      }
+      a2n <- rbind(a2n, data.frame(id=na-n1, t=t))
+    }else if(t2<=t1){#####case 3 t2 < ta, t2 <= t1
+      t <- t2
+      nd <- nd+1
+      n2 <- n2-1
+      if(n2==0){
+        t2 <- Inf
+      }else{
+        t2 <- t+service[nd+1, seed]*beta/2
+      }
+      dn <- rbind(dn, data.frame(id=nd, t=t))
+    }
+  }
+  ave_time <- a1n %>%
+    right_join(dn, by = "id") %>%
+    mutate(wait_time=t.y-t.x) %>% 
+    summarise(ave_time=mean(wait_time))
+  ave_time <- ave_time - mean(service[1:dim(dn)[1], seed])*(alpha+beta)/2
+  time_past <- dn$t[dim(dn)[1]] - a1n$t[dim(a1n)[1]]
+  return(data.frame(ave_time=ave_time, time_past=time_past))
+}
+results <- apply(matrix(1:7),1, sim_tandem, alpha=alpha, beta=beta)
+results_tandem <- colMeans(Reduce("rbind",results))
+results <- apply(matrix(1:7),1, sim_tandem, alpha=beta, beta=alpha)
+results_tandem_reverse <- colMeans(Reduce("rbind",results))
+```
+
+### 3) where each teller has their own line (grocery store)
+
+```{r}
+sim_2l2s <- function(seed){
+  t <- 0 # time variable
+  n1 <- 0 # server 1 customers
+  n2 <- 0 # server 2 customers
+  n1a <- 0 # number of arrival at time t at S1
+  n2a <- 0 # number of arrival at time t at S2
+  n1d <- 0 # number of departure at time t at S1
+  n2d <- 0 # number of departure at time t at S2
+  t1a <- 0 # time of next arrival at S1
+  t2a <- 0 # time of next arrival at S2
+  t1d <- Inf # service completion time by server 1
+  t2d <- Inf # service completion time by server 2
+  a1n <- data.frame(id=NULL, t=NULL, s=NULL)# arrival time of customer n at S1
+  a2n <- data.frame(id=NULL, t=NULL, s=NULL)# arrival time of customer n at S2
+  d1n <- data.frame(id=NULL, t=NULL, s=NULL)# departure time of customer n at S1
+  d2n <- data.frame(id=NULL, t=NULL, s=NULL)# departure time of customer n at S2
+  
+  set.seed(seed)
+  t1a <- s[1, seed]
+  t2a <- s[2, seed]
+  close_time <- 9
+  while(t1a <= close_time | t2a <= close_time | n1 != 0 | n2 != 0){
+    if(t1a==min(c(t1a, t2a, t1d, t2d, close_time))){###### case 1: min t1a
+      t <- t1a
+      n1a <- n1a+1
+      n1 <- n1+1
+      t1a <- s[(2*n1a+1), seed]
+      if(n1==1){
+        service[2*n1a-1, seed] <- service[2*n1a-1, seed]*alpha
+        t1d <- t+service[2*n1a-1, seed]
+      }
+      a1n <- rbind(a1n, data.frame(id=n1a, t=t, s=1))
+    }else if(t2a==min(c(t1a, t2a, t1d, t2d, close_time))){###### case 2: min t2a
+      t <- t2a
+      n2a <- n2a+1
+      n2 <- n2+1
+      t2a <- s[(2*(n2a+1)), seed]
+      if(n2==1){
+        service[2*n1a, seed] <- service[2*n1a, seed]*beta
+        t2d <- t+service[2*n1a, seed]
+      }
+      a2n <- rbind(a2n, data.frame(id=n2a, t=t, s=2))
+    }else if(t1d<=t2d){#####case 3 t1 < ta, t1 <= t2
+      t <- t1d
+      n1 <- n1-1
+      n1d <- n1d+1
+      if(n1==0){
+        t1d <- Inf
+      }else{
+        service[2*n1d+1, seed] <- service[2*n1d+1, seed]*alpha
+        t1d <- t+service[2*n1d+1, seed]
+      }
+      d1n <- rbind(d1n, data.frame(id=n1d, t=t, s=1))
+    }else if(t1d>=t2d){#####case 4 t2 < ta, t2 <= t1
+      t <- t2d
+      n2 <- n2-1
+      n2d <- n2d+1
+      if(n2==0){
+        t2d <- Inf
+      }else{
+        service[2*n2d+2, seed] <- service[2*n2d+2, seed]*beta
+        t2d <- t+service[2*n2d+2, seed]
+      }
+      d2n <- rbind(d2n, data.frame(id=n2d, t=t, s=2))
+    }
+  }
+  ave_time <- rbind(a1n,a2n) %>%
+    right_join(rbind(d1n,d2n), by = c("id","s")) %>%
+    mutate(wait_time=t.y-t.x) %>% 
+    summarise(ave_time=mean(wait_time))
+  ave_time <- ave_time - mean(service[1:dim(rbind(d1n,d2n))[1], seed])
+  time_past <- max(d1n$t[dim(d1n)[1]],d2n$t[dim(d2n)[1]]) - 
+    max(a1n$t[dim(a1n)[1]],a2n$t[dim(a2n)[1]])
+  return(data.frame(ave_time=ave_time, time_past=time_past))
+}
+results <- apply(matrix(1:7),1, sim_2l2s)
+results_2l2s <- colMeans(Reduce("rbind",results))
+```
+
+### 4) Conclusion
+
+```{r}
+df <- round(rbind(results_1l2s,
+                  results_2l2s,
+                  results_tandem,
+                  results_tandem_reverse),4)
+df %>%
+  kbl(caption = "Summary table") %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+```
+
+As we tell from the summary table, 1 line 2 servers system shortest expected waiting time and past time. 2 line 2 servers system has longest past time. As for tandem system, if we put a more efficient server ($\alpha$) at the end, both of expected waiting time and past time would be shortened.
+
+## Hard question
+
+For the third type of line, we allow people to switch lines. Which line has the shortest expected waiting time?
+
+**Assumptions**:
+
+- If one server is available/empty, some customers who is waiting in the other line will always come to this server.
+
+- Customers has an idea about the length of time they will take in the server and also know that of others.
+
+- Switching lines takes no time.
+
+- Switching lines always happens when a new customer come.
+
+Under these assumptions, we can take the 2 lines 2 servers system as 1 line 2 servers system. Because every permutation of 2 lines can be linked to a corresponding situation in 1 line 2 servers system.
+
+### 1) Situations
+
+Given these assumptions, we have three kinds of situations:
+
+1) All customers are quite strictly to the *first-come-first-served rule*. In this case, although there are two lines, a customer is able to get services first if he/she is the first one to the shop by switching between lines. Thus, this situation is actually the same as the 1 line 2 server system. 
+
+2) Customers switch between lines *arbitrarily.* In this situation, we can also apply the 1 line 2 server system and we need to re-order the waiting line randomly whenever a new customer come.
+
+3) Customers switch between lines, following the rule that they want to achieve the *shortest expected waiting time*. In this situation, we can also apply the 1 line 2 server system and we need to re-order the waiting line in ascending order whenever a new customer come.
+
+### 2) Function
+
+```{r}
+sim_1l2s <- function(seed, situation=1){
+  t <- 0   # time variable
+  n <- 0  # number of customers
+  i1 <- 0 # server 1 customers
+  i2 <- 0 # server 2 customers
+  na <- 0 # number of arrival at time t
+  c1 <- 0 # number of customers being served by server 1 by time t
+  c2 <- 0 # number of customers being served by server 2 by time t
+  an <- data.frame(id=NULL, t=NULL)  # arrival time of customer n
+  dn <- data.frame(id=NULL, t=NULL)  # departure time of customer n
+  ta <- 0 # time of next arrival
+  t1 <- Inf # service completion time by server 1
+  t2 <- Inf # service completion time by server 2
+  
+  # Initialize
+  set.seed(seed)
+  ta <- s[1, seed]
+  close_time <- 9
+  
+  while(ta <= close_time | i1 != 0 | i2 != 0){
+    if(ta==min(c(ta, t1, t2, close_time))){###### case 1: ta=min(ta, t1, t2)  
+      t <- ta
+      na <- na+1
+      ta <- s[(na+1), seed]
+      an <- rbind(an, data.frame(id=na, t=t))
+      if(n==0){
+        n <- 1; i1 <- na; i2 <- 0
+        service[i1, seed] <- service[i1, seed]*alpha
+        t1 <- t+service[i1, seed]
+      }else if(n==1 & i1>0){
+        n <- 2; i2 <- na
+        service[i2, seed] <- service[i2, seed]*beta
+        t2 <- t+service[i2, seed]
+      }else if(n==1 & i2>0){
+        n <- 2; i1 <- na
+        service[i1, seed] <- service[i1, seed]*alpha
+        t1 <- t+service[i1, seed]
+      }else if(n > 1){
+        n <- n + 1
+        if(n > 3 & situation == 3){
+          reorder_ind <- c((max(i1, i2)+1):(max(i1, i2)+n-2))
+          service[reorder_ind, seed] <- sort(service[reorder_ind, seed])
+        }else if(n > 3 & situation == 2){
+          reorder_ind <- c((max(i1, i2)+1):(max(i1, i2)+n-2))
+          temp <- sample(service[reorder_ind, seed],
+                         length(reorder_ind),replace = F)
+          service[reorder_ind, seed] <- temp
+        }
+      }
+    }else if(t1==min(c(t1, t2))){#####case 2 t1 < ta, t1 <= t2
+      t <- t1
+      c1 <- c1+1
+      dn <- rbind(dn, data.frame(id=i1, t=t))
+      if(n==1){
+        n <- 0; i1 <- 0; i2 <- 0
+        t1 <- Inf
+      }else if(n==2){
+        n <- 1; i1 <- 0
+        t1 <- Inf
+      }else if(n>2){
+        m <- max(i1,i2)
+        n <- n - 1; i1 <- m + 1
+        service[i1, seed] <- service[i1, seed]*alpha
+        t1 <- t+service[i1, seed]
+      }
+    }else if(t2==min(c(t1, t2))){#####case 3 t2 < ta, t2 <= t1
+      t <- t2
+      c2 <- c2+1
+      dn <- rbind(dn, data.frame(id=i2, t=t))
+      if(n==1){
+        n <- 0; i1 <- 0; i2 <- 0
+        t2 <- Inf
+      }else if(n==2){
+        n <- 1; i2 <- 0
+        t2 <- Inf
+      }else if(n>2){
+        m <- max(i1,i2)
+        n <- n - 1; i2 <- m + 1
+        service[i2, seed] <- service[i2, seed]*beta
+        t2 <- t+service[i2, seed]
+      }
+    }
+  }
+  ave_time <- an %>% 
+    right_join(dn, by = "id") %>% 
+    mutate(wait_time=t.y-t.x) %>% 
+    summarise(ave_time=mean(wait_time))
+  ave_time <- ave_time - mean(service[1:dim(dn)[1], seed])
+  time_past <- dn$t[dim(dn)[1]] - an$t[dim(an)[1]]
+  return(data.frame(ave_time=ave_time, time_past=time_past))
+}
+results <- apply(matrix(1:7),1, sim_1l2s)
+results_2l2s_s_1 <- colMeans(Reduce("rbind",results))
+results <- apply(matrix(1:7),1, sim_1l2s, situation=2)
+results_2l2s_s_2 <- colMeans(Reduce("rbind",results))
+results <- apply(matrix(1:7),1, sim_1l2s, situation=3)
+results_2l2s_s_3 <- colMeans(Reduce("rbind",results))
+```
+
+### 3) Conclusion
+
+```{r}
+df <- round(rbind(results_1l2s,
+                  results_2l2s,
+                  results_2l2s_s_1,
+                  results_2l2s_s_2,
+                  results_2l2s_s_3,
+                  results_tandem,
+                  results_tandem_reverse),4)
+df %>%
+  kbl(caption = "Summary table") %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+```
+
+As we can tell from the Summary table, when switching is allowed, all of three situations take much shorter expected waiting time and past time. Among all three situations, when all customers switch lines following the rule to generate shortest waiting time, they can make it come true. In addition, an arbitrary switching can also bring about a shorter expected waiting time and past time in some cases.
+
+<div class="tocify-extend-page" data-unique="tocify-extend-page" style="height: 0;"></div>

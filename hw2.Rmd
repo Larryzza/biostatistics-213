@@ -1,0 +1,78 @@
+---
+title: "Biostat 213 Homework 2"
+author: Zian ZHUANG
+output:
+  html_document:
+    highlight: pygments
+    toc: yes
+    toc_float: yes
+---
+
+<!-- Setup -->
+<style type="text/css">
+body{ /* Normal  */
+      font-size: 17px;
+      font-family: "Times New Roman";
+  }
+h1,h2,h3,h4,h5,h6{
+  font-family: "Times New Roman";
+}
+</style>
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE, cache.lazy = FALSE)
+library(tidyverse)
+library(gt)
+```
+<!-- Begin writing -->
+## Simulate distribution through AR method
+
+### Gamma distribution 
+
+We know that pdf of Gamma distribution is:
+
+$$
+f(x) = \frac{\beta^\alpha}{\Gamma(\alpha)}x^{\alpha-1}e^{-\beta x}
+$$
+
+We use t distribution as the instrumental distribution. Note that we only need non-negative values here.
+
+```{r}
+rm(list=ls())
+sim_gamma <- function(nsim=10000, shape=3, rate=1, M=8){
+  set.seed(199609)
+  df <- 1
+  u <- runif(nsim)
+  #make all values non-negative
+  x <- abs(rt(nsim, df = df))
+  gx <- dt(x, df = df)
+  fx <- rate^shape/gamma(shape)*x^(shape-1)*exp(-rate*x)
+  df <- data.frame(M, gx, fx, u)
+  
+  #check
+  check <- apply(df, 1, function(x){ifelse(x[1]*x[2]<x[3],T,F)})
+  if(length(which(check==T))>0) warning("try a larger M")
+  
+  #AR
+  ar <- apply(df, 1, function(x){ifelse(x[3]/(x[1]*x[2])>=x[4],T,F)})
+  
+  return(data.frame(x,ar,gx,fx,M,u))
+}
+
+sim <- sim_gamma()
+
+print(paste0("efficiency: ", 100*length(which(sim$ar==T))/length(sim$ar), "%"))
+```
+
+### visualization
+
+```{r}
+x <- sim$x
+y <- sim$gx*sim$M*sim$u
+accept <- which(sim$ar==T)
+plot(x, y, pch=19, cex=0.5, xlim=c(0,10),
+     col=rgb(0,0,1, alpha=0.2))
+points(x[accept], y[accept], 
+       col=rgb(0,1,0, alpha=0.2), cex=0.5, pch=19)
+```
+
+<div class="tocify-extend-page" data-unique="tocify-extend-page" style="height: 0;"></div>

@@ -1,0 +1,100 @@
+---
+title: "Biostat 213 Homework 1"
+author: Zian ZHUANG
+output:
+  html_document:
+    highlight: pygments
+    toc: yes
+    toc_float: yes
+---
+
+<!-- Setup -->
+<style type="text/css">
+body{ /* Normal  */
+      font-size: 17px;
+      font-family: "Times New Roman";
+  }
+h1,h2,h3,h4,h5,h6{
+  font-family: "Times New Roman";
+}
+</style>
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE, cache.lazy = FALSE)
+library(tidyverse)
+library(gt)
+```
+<!-- Begin writing -->
+## Simulate distribution
+
+### Poisson distribution 
+
+We know that pmf of Poisson distribution is:
+
+$$
+f(x) = \frac{\lambda^xe^{-\lambda}}{x!}
+$$
+Take $\lambda=1$
+```{r}
+lambda <- 1
+x <- 0:1000
+fx <- exp(-1)/factorial(x)
+Fx <- cumsum(fx)
+
+# Inverse-transform
+set.seed(1)
+u <- runif(1000)
+xsim <- sapply(u, function(uval) min(x[Fx >= uval]))
+
+# Base-R function
+set.seed(1)
+rpois_vals <- rpois(1000, 1)
+
+# Check difference between two methods
+tibble(`Inverse-transform-generated` = xsim, `Base-R generated` = rpois_vals) %>%
+    pivot_longer(everything(), names_to = "method") %>%
+    ggplot(aes(value)) +
+        geom_histogram(bins = 50) +
+        facet_wrap(~ method) +
+        theme_bw() +
+        labs(x = "x", y = "Frequency")
+
+```
+
+
+### Binomial distribution 
+
+We know that pmf of Poisson distribution is:
+
+$$
+f(x) = \begin{pmatrix} n \\ x \end{pmatrix}p^x(1-p)^{n-x}
+$$
+
+Take $n=10, p=0.3$
+```{r}
+n <- 10
+x <- 0:10
+p <- 0.3
+fx <- factorial(n)/(factorial(x)*factorial(n-x))*p^(x)*(1-p)^(n-x)
+Fx <- cumsum(fx)
+
+# Inverse-transform
+set.seed(1)
+u <- runif(1000)
+xsim <- sapply(u, function(uval) min(x[Fx >= uval]))
+
+# Base-R function
+set.seed(1)
+rpois_vals <- rbinom(1000, n, p)
+
+# Check difference between two methods
+tibble(`Inverse-transform-generated` = xsim, `Base-R generated` = rpois_vals) %>%
+    pivot_longer(everything(), names_to = "method") %>%
+    ggplot(aes(value)) +
+        geom_histogram(bins = 50) +
+        facet_wrap(~ method) +
+        theme_bw() +
+        labs(x = "x", y = "Frequency")
+
+```
+
+<div class="tocify-extend-page" data-unique="tocify-extend-page" style="height: 0;"></div>
