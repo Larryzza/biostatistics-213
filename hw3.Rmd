@@ -1,0 +1,146 @@
+---
+title: "Biostat 213 Homework 1"
+author: Zian ZHUANG
+output:
+  html_document:
+    highlight: pygments
+    toc: yes
+    toc_float: yes
+---
+
+<!-- Setup -->
+<style type="text/css">
+body{ /* Normal  */
+      font-size: 17px;
+      font-family: "Times New Roman";
+  }
+h1,h2,h3,h4,h5,h6{
+  font-family: "Times New Roman";
+}
+</style>
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE, cache.lazy = FALSE)
+library(kableExtra)
+library(tidyverse)
+library(gt)
+```
+<!-- Begin writing -->
+## Bivariate Gibbs
+
+Generate 2 normal distributions X and Y with known correlation $\rho$.
+
+### set up function 
+
+```{r}
+set.seed(1996)
+mcmc_bi <- function(rho){ # input correlation
+  m = 100000; x = y = numeric(m); x[1] = y[1] = 0  # initial conditions
+  sgm = sqrt(1 - rho^2)                            # standard deviation
+  
+  for (i in 2:m) {                                 # Gibbs Sampler Loop
+    x[i] = rnorm(1, rho*y[i-1], sgm)
+    y[i] = rnorm(1, rho*x[i], sgm)
+  }
+  
+  alpha.1 = beta.1 = .01
+  alpha.2 = .015; beta.2 = .012
+  x1 = alpha.1 +beta.1*x          # x1 ~ N(alpha.1, beta.1)
+  y1 = alpha.2 +beta.2*y          # x2 ~ N(alpha.2, beta.2)
+  a = .4; b = .6                    #  weights
+  w = a*x1 + b*y1; mean(w); sd(w) # Overall returns
+  return(list(x1=x1, y1=y1, x=x, y=y, w=w))
+}
+```
+
+### $\rho=0.1$
+
+```{r}
+sim1 <- mcmc_bi(rho = 0.1)
+par(mfrow=c(2,3), pty="s") # 2 x 2 array of square plots
+plot(sim1$x[1:50], sim1$y[1:50], type="l")
+plot(sim1$x1, sim1$y1, pch=".", 
+     main = "x1, x2 returns, green = portfolio > 0")
+points(sim1$x1[sim1$w>0], sim1$y1[sim1$w>0], pch=".", col="green4")
+plot(sim1$x[1:1000], type="l"); plot(sim1$y[1:1000], type="l")
+acf(sim1$y); acf(sim1$x)
+
+```
+
+### $\rho=0.5$
+
+```{r}
+sim2 <- mcmc_bi(rho = 0.5)
+par(mfrow=c(2,3), pty="s") # 2 x 2 array of square plots
+plot(sim2$x[1:50], sim2$y[1:50], type="l")
+plot(sim2$x1, sim2$y1, pch=".", 
+     main = "x1, x2 returns, green = portfolio > 0")
+points(sim2$x1[sim2$w>0], sim2$y1[sim2$w>0], pch=".", col="green4")
+plot(sim2$x[1:1000], type="l"); plot(sim2$y[1:1000], type="l")
+acf(sim2$y);acf(sim2$x)
+```
+
+### $\rho=0.7$
+
+```{r}
+sim3 <- mcmc_bi(rho = 0.7)
+par(mfrow=c(2,3), pty="s") # 2 x 2 array of square plots
+plot(sim3$x[1:50], sim3$y[1:50], type="l")
+plot(sim3$x1, sim3$y1, pch=".", 
+     main = "x1, x2 returns, green = portfolio > 0")
+points(sim3$x1[sim3$w>0], sim3$y1[sim3$w>0], pch=".", col="green4")
+plot(sim3$x[1:1000], type="l"); plot(sim3$y[1:1000], type="l")
+acf(sim3$y);acf(sim3$x)
+```
+
+### $\rho=0.99$
+
+```{r}
+sim4 <- mcmc_bi(rho = 0.95)
+par(mfrow=c(2,3), pty="s") # 2 x 2 array of square plots
+plot(sim4$x[1:50], sim4$y[1:50], type="l")
+plot(sim4$x1, sim4$y1, pch=".", 
+     main = "x1, x2 returns, green = portfolio > 0")
+points(sim4$x1[sim4$w>0], sim4$y1[sim4$w>0], pch=".", col="green4")
+plot(sim4$x[1:1000], type="l"); plot(sim4$y[1:1000], type="l")
+acf(sim4$y); acf(sim4$x)
+```
+
+### $\rho=1$
+
+```{r}
+sim5 <- mcmc_bi(rho = 1)
+par(mfrow=c(2,2), pty="s") # 2 x 2 array of square plots
+plot(sim5$x[1:50], sim5$y[1:50], type="l")
+plot(sim5$x1, sim5$y1, pch=".", 
+     main = "x1, x2 returns, green = portfolio > 0")
+points(sim5$x1[sim5$w>0], sim5$y1[sim5$w>0], pch=".", col="green4")
+plot(sim5$x[1:1000], type="l"); plot(sim5$y[1:1000], type="l")
+```
+
+Since x and y are unchanged (sd=0) in the chain, we cannot calculate the ACF plots for them.
+
+### Conclusion
+
+When correlation between x and y increase (i.e., $\rho$ increases), it is harder for chains to converge. As we can tell from the ACF plots above, When correlation increase, it will approach to 0 more slowly. In addition, plots of x and y shows that, when correlation is large (e.g., $\rho=0.99$), points are wandering around, showing the poor convergence. $\rho=1$ is a special case since the standard deviation equals 0 and x, y take values from each other. In this case, x, y are unchanged within the chain.
+
+```{r}
+x1_total <- cbind(sim1$x1, sim2$x1, sim3$x1, sim4$x1, sim5$x1)
+df <- apply(x1_total, 2, 
+            function(x)quantile(x, c(0.025,0.5,0.975))) %>% round(.,4)
+colnames(df) <- c("rho=0.1","rho=0.5","rho=0.7","rho=0.99","rho=0.1")
+df %>%
+  kbl(caption = "Summary table of x1") %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+
+y1_total <- cbind(sim1$y1, sim2$y1, sim3$y1, sim4$y1, sim5$y1)
+df <- apply(y1_total, 2, 
+            function(x)quantile(x, c(0.025,0.5,0.975))) %>% round(.,4)
+colnames(df) <- c("rho=0.1","rho=0.5","rho=0.7","rho=0.99","rho=1")
+df %>%
+  kbl(caption = "Summary table of y1") %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+```
+
+From the summary table of x1 and y1, we can see that all values of rho provides reasonable estimates, except for rho=1. Then we know that if the chain is long enough, we may still be able to obtain valid estimates of highly correlated variables.
+
+<div class="tocify-extend-page" data-unique="tocify-extend-page" style="height: 0;"></div>
